@@ -1,0 +1,2 @@
+# MailDepot
+MailDepot WP Plugin
