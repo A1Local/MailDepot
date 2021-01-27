@@ -1,4 +1,5 @@
 === MailDepot ===
+
 Contributors: a1local
 Donate link: https://a1local.com.au/
 Tags: email subscribers, grow email list, lead magnet, email marketing, Mailchimp, email capture
