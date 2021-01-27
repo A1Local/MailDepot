@@ -149,9 +149,8 @@ function maildepot_mailchimp_list_id_cb($args) {
 	if( isset( $options['mailchimp_api_key'] ) ){
     	$api_key = $options['mailchimp_api_key'];
     	$url = 'https://' . substr($api_key,strpos($api_key,'-')+1) . '.api.mailchimp.com/3.0/lists/';
-    	$result = json_decode( rudr_mailchimp_curl_connect( $url, 'GET', $api_key, $data) );
-    	//print_r( $result);
-    	 
+    	$result = json_decode( maildepot_mailchimp_curl_connect( $url, 'GET', $api_key, $data) );
+    	
     	if( !empty($result->lists) ) {
     		echo '<select id="'.esc_attr( $args['label_for'] ).'" name="maildepotmailchimp_options['.esc_attr( $args['label_for'] ).']">';
     		echo '<option value="">Select list</option>';
@@ -232,7 +231,7 @@ function maildepotmailchimp_options_page_html() {
     </div><?php
 }
 
-function rudr_mailchimp_curl_connect( $url, $request_type, $api_key, $data = array() ) {
+function maildepot_mailchimp_curl_connect( $url, $request_type, $api_key, $data = array() ) {
 	
 	$headers = array(
 		"Content-Type"  =>  "application/json",
@@ -330,10 +329,11 @@ function maildepot_mailchimp_subscribe_callback(){
 	if ( !wp_verify_nonce( $_REQUEST['nonce'], 'mailchimp_subscribe' )) {
 		$error = true;
 		$request['error'] = 1;
-		$request['error_message'] .= 'Sequrity error';
+		$request['error_message'] .= 'Security error';
 	}
 	
-	$mailchimp_email = strip_tags(trim($_REQUEST['mailchimp_email']));
+	/* Directly passing this email to mailchimp and not saving into database  */
+	$mailchimp_email = sanitize_email( $_REQUEST['mailchimp_email'] );
 	
 	if(empty($mailchimp_email)){
 		$error = true;
@@ -341,13 +341,6 @@ function maildepot_mailchimp_subscribe_callback(){
 		$request['error_message'] .= 'Email is required';
 	}	
 	
-	if(empty($_REQUEST['mailchimp_file'])){
-		$error = true;
-		$request['error'] = 1;
-		$request['error_message'] .= 'File is required';	
-	}else{
-		$request['file'] = $_REQUEST['mailchimp_file'];
-	}
 	
 	if ( $error === false ) {
 	
@@ -370,16 +363,13 @@ function maildepot_mailchimp_subscribe_callback(){
     		
     		
     		$url = 'https://' . substr($api_key,strpos($api_key,'-')+1) . '.api.mailchimp.com/3.0/lists/'.$list_id.'/members';
-    		$result = json_decode( rudr_mailchimp_curl_connect( $url, 'POST', $api_key, $data) );
-    		//echo '<pre>';
-    		//print_r( $result);
-    		//echo '</pre>';
-    				
+    		$result = json_decode( maildepot_mailchimp_curl_connect( $url, 'POST', $api_key, $data) );
+  
     		if(!empty($result->id) && $result->email_address == $mailchimp_email){
     			$request['success'] = 1;
     		}else{
     			$request['error'] = 1;
-    			$request['error_message'] = '<strong>'.$result->title.':</strong> '.$result->detail;
+    			$request['error_message'] = '<strong>'.$result->title.':</strong> '.str_replace("Use PUT to insert or update list members.", "", $result->detail);
     		}
 		}else{
 		    $request['error'] = 1;
@@ -400,39 +390,44 @@ function maildepot_force_download_init(){
 	    
 	    if ( wp_verify_nonce( $_REQUEST['d_nonce'], 'download_referrer' )) {
     	    
-    		$file = trim( $_GET['file'] );
+    		$file = esc_url_raw( $_GET['file'] );
     		
-    		$allowed_extensions = array(
-    		    "pdf"   => "application/pdf",
-    		    "xls"   => "application/vnd.ms-excel",
-    		    "xlsx"  => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    		    "ppt"   => "application/vnd.ms-powerpoint",
-    		    "pptx"  => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    		    "txt"   => "text/plain",
-    		    "zip"   => "application/zip",
-    		    "rar"   => "application/vnd.rar"
-    		);
-    		
-    		$check = wp_check_filetype( $file ); //Retrieve the file type from the file name.
-    		
-    		if( in_array( strtolower($check["ext"]), array_keys($allowed_extensions) ) || in_array( $check["type"], array_values($allowed_extensions) ) ){
-    	
-        		$dfile_content = wp_remote_get( $file );
+    		if( $file ){
         		
-        		if ( is_array( $dfile_content ) && ! is_wp_error( $dfile_content ) ) {
-                    $headers = $dfile_content['headers']; // array of http header lines
-                    
-                    $resulatant = $dfile_content['body']; // use the content
+        		$allowed_extensions = array(
+        		    "pdf"   => "application/pdf",
+        		    "xls"   => "application/vnd.ms-excel",
+        		    "xlsx"  => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        		    "ppt"   => "application/vnd.ms-powerpoint",
+        		    "pptx"  => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        		    "txt"   => "text/plain",
+        		    "zip"   => "application/zip",
+        		    "rar"   => "application/vnd.rar"
+        		);
+        		
+        		$check = wp_check_filetype( $file ); //Retrieve the file type from the file name.
+        		
+        		if( in_array( strtolower($check["ext"]), array_keys($allowed_extensions) ) || in_array( $check["type"], array_values($allowed_extensions) ) ){
+        	
+            		$dfile_content = wp_remote_get( $file );
             		
-            		header("Content-Disposition: attachment; filename=\"".basename($file)."\""); 
-            		header('Content-Type: application/force-download');
-            		header("Content-Type: application/octet-stream");
-            		
-            		echo $resulatant;
-            		exit();
+            		if ( is_array( $dfile_content ) && ! is_wp_error( $dfile_content ) ) {
+                        $headers = $dfile_content['headers']; // array of http header lines
+                        
+                        $resulatant = $dfile_content['body']; // use the content
+                		
+                		header("Content-Disposition: attachment; filename=\"".basename($file)."\""); 
+                		header('Content-Type: application/force-download');
+                		header("Content-Type: application/octet-stream");
+                		
+                		echo $resulatant;
+                		exit();
+            		}
+        		}else{
+        		    exit("Requested file type to download is not allowed!!!");
         		}
     		}else{
-    		    exit("Requested file type to download is not allowed!!!");
+    		    exit("Invalid URL");
     		}
 	    }else{
 	        exit("Invalid nonce!!!");
